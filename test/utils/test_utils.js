@@ -3,7 +3,7 @@ const expect = require('chai').expect
 const axiosRetry = require('axios-retry')
 const bsv = require('bsv')
 require('dotenv').config()
-const { bitcoinToSatoshis } = require('../../index').utils
+const { bitcoinToSatoshis, finaliseSTASUnlockingScript } = require('../../index').utils
 
 function schema (publicKeyHash, symbol, supply) {
   const schema = {
@@ -65,7 +65,7 @@ function getUtxo (txid, tx, vout) {
     txid: txid,
     vout: vout,
     scriptPubKey: tx.vout[vout].scriptPubKey.hex,
-    amount: tx.vout[vout].value
+    satoshis: bitcoinToSatoshis(tx.vout[vout].value)
   }
 }
 
@@ -235,7 +235,7 @@ async function getTokenResponse (tokenId, symbol) {
   }
 
   axiosRetry(axios, {
-    retries: 5, // number of retries
+    retries: 10, // number of retries
     retryDelay: (retryCount) => {
       console.log(`retry attempt: ${retryCount}`)
       return retryCount * 2000 // time interval between retries
@@ -288,24 +288,9 @@ async function getTokenWithSymbol (txid, symbol, vout) {
   return tokenId
 }
 
-async function getTokenBalance (address) {
-  const url = `https://${process.env.API_NETWORK}.whatsonchain.com/v1/bsv/${process.env.API_NETWORK}/address/${address}/tokens`
-  const response = await axios({
-    method: 'get',
-    url,
-    auth: {
-      username: process.env.API_USERNAME,
-      password: process.env.API_PASSWORD
-    }
-  })
-
-  return response.data.tokens[0].balance
-}
-
 async function isTokenBalance (address, expectedBalance) {
   let response
-  await new Promise(resolve => setTimeout(resolve, 2000))
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 90; i++) {
     const url = `https://${process.env.API_NETWORK}.whatsonchain.com/v1/bsv/${process.env.API_NETWORK}/address/${address}/tokens`
     response = await axios({
       method: 'get',
@@ -315,7 +300,12 @@ async function isTokenBalance (address, expectedBalance) {
         password: process.env.API_PASSWORD
       }
     })
-    const balance = response.data.tokens[0].balance
+    let balance
+    try {
+      balance = response.data.tokens[0].balance
+    } catch (e) {
+      console.log('Balance Not Updated, retrying')
+    }
     if (balance === expectedBalance) {
       return
     }
@@ -580,6 +570,77 @@ function randomSymbol (length) {
   return result
 }
 
+function calcuateFeesForContract (inputTx, utxo, fundingUtxo) {
+  let outputSats = 0
+  for (let i = 0; i < inputTx.vout.length; i++) {
+    outputSats += inputTx.vout[i].value
+  }
+
+  const inputSats = (bitcoinToSatoshis(utxo[0].amount) + bitcoinToSatoshis(fundingUtxo[0].amount))
+  const fees = inputSats - bitcoinToSatoshis(outputSats)
+  console.log(fees)
+  return fees
+}
+
+/*
+  Fees are calucated by inputs - outputs.
+  To calculate input sats we get the vouts of the tx used for the input
+  then iterate over all outputs of tx used as input to retrieve sat amounts
+*/
+function calcuateFees (inputTx, outputTx) {
+  const vinIndexArray = []
+  for (let i = 0; i < outputTx.vin.length; i++) {
+    vinIndexArray.push(outputTx.vin[i].vout)
+  }
+  let inputSats = 0
+  for (let i = 0; i < vinIndexArray.length; i++) {
+    inputSats += inputTx.vout[vinIndexArray[i]].value
+  }
+
+  let outputSats = 0
+  for (let i = 0; i < outputTx.vout.length; i++) {
+    outputSats += outputTx.vout[i].value
+  }
+  const fees = bitcoinToSatoshis(inputSats) - bitcoinToSatoshis(outputSats)
+  return fees
+}
+
+function signScript (hex, tx, keyMap) {
+  let signingPrivateKey
+  for (let i = 0; i < hex.signingInfo.length; i++) {
+    const signingInfo = hex.signingInfo[i]
+    if (!keyMap.has(signingInfo.publicKey)) {
+      throw new Error('unknown public key: ' + signingInfo.publicKey)
+    }
+    signingPrivateKey = keyMap.get(signingInfo.publicKey)
+
+    const sig = bsv.Transaction.sighash.sign(tx, signingPrivateKey, signingInfo.sighash, signingInfo.inputIndex, signingInfo.script, new bsv.crypto.BN(signingInfo.satoshis)).toTxFormat().toString('hex')
+    const unlockingScript = bsv.Script.fromASM(sig + ' ' + signingInfo.publicKey.toString('hex'))
+    tx.inputs[signingInfo.inputIndex].setScript(unlockingScript)
+  }
+}
+
+function signScriptWithUnlocking (unsignedReturn, tx, keyMap) {
+  let signingPrivateKey
+  // now sign the tx
+  for (let i = 0; i < unsignedReturn.signingInfo.length; i++) {
+    const signingInfo = unsignedReturn.signingInfo[i]
+    if (!keyMap.has(signingInfo.publicKey)) {
+      throw new Error('unknown public key: ' + signingInfo.publicKey)
+    }
+    signingPrivateKey = keyMap.get(signingInfo.publicKey)
+
+    const sig = bsv.Transaction.sighash.sign(tx, signingPrivateKey, signingInfo.sighash, signingInfo.inputIndex, signingInfo.script, new bsv.crypto.BN(signingInfo.satoshis)).toTxFormat().toString('hex')
+    if (signingInfo.type === 'stas') {
+      const finalScript = finaliseSTASUnlockingScript(tx, signingInfo.inputIndex, signingInfo.publicKey.toString('hex'), sig)
+      tx.inputs[signingInfo.inputIndex].setScript(bsv.Script.fromASM(finalScript))
+    } else {
+      const unlockingScript = bsv.Script.fromASM(sig + ' ' + signingInfo.publicKey.toString('hex'))
+      tx.inputs[signingInfo.inputIndex].setScript(unlockingScript)
+    }
+  }
+}
+
 module.exports = {
   schema,
   getIssueInfo,
@@ -589,7 +650,6 @@ module.exports = {
   getVoutAmount,
   getToken,
   getTokenResponse,
-  getTokenBalance,
   getTenIssueInfo,
   getTokenWithSymbol,
   addData,
@@ -605,5 +665,9 @@ module.exports = {
   getUnspentMainNet,
   setupMainNetTest,
   randomSymbol,
-  isTokenBalance
+  isTokenBalance,
+  calcuateFeesForContract,
+  calcuateFees,
+  signScript,
+  signScriptWithUnlocking
 }

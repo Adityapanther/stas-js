@@ -30,16 +30,14 @@ describe('regression, testnet', () => {
     const fundingUtxos = await getFundsFromFaucet(fundingPrivateKey.toAddress(process.env.NETWORK).toString())
     const publicKeyHash = bsv.crypto.Hash.sha256ripemd160(issuerPrivateKey.publicKey.toBuffer()).toString('hex')
     const supply = 10000
-    const satsPerSupply = 10000 // 1 token worth 10k sats
+    const satsPerSupply = 1 // 1 token worth 10k sats
     const symbol = 'TAALT'
     const wait = 5000 // set wait before token balance check
 
-    const schema = utils.schema(publicKeyHash, symbol, supply, satsPerSupply)
+    const schema = utils.schema(publicKeyHash, symbol, supply)
     schema.satsPerToken = satsPerSupply
 
-    console.log(aliceAddr)
-
-    const contractHex = contract(
+    const contractHex = await contract(
       issuerPrivateKey,
       contractUtxos,
       fundingUtxos,
@@ -62,7 +60,7 @@ describe('regression, testnet', () => {
 
     let issueHex
     try {
-      issueHex = issue(
+      issueHex = await issue(
         issuerPrivateKey,
         issueInfo,
         utils.getUtxo(contractTxid, contractTx, 0),
@@ -88,7 +86,7 @@ describe('regression, testnet', () => {
 
     const issueOutFundingVout = issueTx.vout.length - 1
 
-    const transferHex = transfer(
+    const transferHex = await transfer(
       alicePrivateKey,
       utils.getUtxo(issueTxid, issueTx, 0),
       bobAddr,
@@ -109,22 +107,21 @@ describe('regression, testnet', () => {
     splitDestinations[0] = { address: bobAddr, amount: bitcoinToSatoshis(bobAmount1) }
     splitDestinations[1] = { address: bobAddr, amount: bitcoinToSatoshis(bobAmount2) }
 
-    const splitHex = split(
-      alicePrivateKey,
-      utils.getUtxo(transferTxid, transferTx, 0),
-      splitDestinations,
-      utils.getUtxo(transferTxid, transferTx, 1),
-      fundingPrivateKey
-    )
     try {
-      await broadcast(splitHex)
+      await split(
+        alicePrivateKey,
+        utils.getUtxo(transferTxid, transferTx, 0),
+        splitDestinations,
+        utils.getUtxo(transferTxid, transferTx, 1),
+        fundingPrivateKey
+      )
       assert(false)
     } catch (e) {
       expect(e).to.be.instanceOf(Error)
-      expect(e.message).to.eql('Request failed with status code 400')
+      expect(e.message).to.eql('Cannot Split an NFT')
     }
 
-    const redeemHex = redeem(
+    const redeemHex = await redeem(
       bobPrivateKey,
       issuerPrivateKey.publicKey,
       utils.getUtxo(transferTxid, transferTx, 0),

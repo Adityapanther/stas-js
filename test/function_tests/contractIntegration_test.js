@@ -6,17 +6,18 @@ require('dotenv').config()
 const {
   contract, contractWithCallback
 } = require('../../index')
+const unsignedContract = require('../../lib/unsignedContract')
 
 const {
   getFundsFromFaucet,
   broadcast
 } = require('../../index').utils
 
-const ownerSignCallback = (tx) => {
+const ownerSignCallback = async (tx) => {
   tx.sign(issuerPrivateKey)
 }
 
-const paymentSignCallback = (tx) => {
+const paymentSignCallback = async (tx) => {
   tx.sign(fundingPrivateKey)
 }
 
@@ -28,13 +29,13 @@ let publicKeyHash
 const supply = 10000
 const symbol = 'TAALT'
 let schema
+const keymap = new Map()
 
 beforeEach(async () => {
   await setup()
 })
-
 it('Contract - Successful With Fees', async () => {
-  const contractHex = contract(
+  const contractHex = await contract(
     issuerPrivateKey,
     contractUtxos,
     fundingUtxos,
@@ -48,7 +49,7 @@ it('Contract - Successful With Fees', async () => {
 })
 
 it('Contract - Successful No Fees', async () => {
-  const contractHex = contract(
+  const contractHex = await contract(
     issuerPrivateKey,
     contractUtxos,
     null,
@@ -62,7 +63,7 @@ it('Contract - Successful No Fees', async () => {
 })
 
 it('Contract - Successful No Fees Empty Array', async () => {
-  const contractHex = contract(
+  const contractHex = await contract(
     issuerPrivateKey,
     contractUtxos,
     [],
@@ -76,7 +77,7 @@ it('Contract - Successful No Fees Empty Array', async () => {
 })
 
 it('Contract - Successful With Callback Fee', async () => {
-  const contractHex = contractWithCallback(
+  const contractHex = await contractWithCallback(
     issuerPrivateKey.publicKey,
     contractUtxos,
     fundingUtxos,
@@ -92,7 +93,7 @@ it('Contract - Successful With Callback Fee', async () => {
 })
 
 it('Contract - Successful With Callback No Fee', async () => {
-  const contractHex = contractWithCallback(
+  const contractHex = await contractWithCallback(
     issuerPrivateKey.publicKey,
     contractUtxos,
     null,
@@ -107,9 +108,44 @@ it('Contract - Successful With Callback No Fee', async () => {
   expect(amount).to.equal(supply / 100000000)
 })
 
+it('Contract - Successful With Unsigned & Fee', async () => {
+  const contractHex = await unsignedContract(
+    issuerPrivateKey.publicKey,
+    contractUtxos,
+    fundingUtxos,
+    fundingPrivateKey,
+    schema,
+    supply
+  )
+  const contractTxJson = JSON.parse(contractHex.json)
+  const contractTx = new bsv.Transaction(contractTxJson)
+  let signedContract = contractTx.sign(issuerPrivateKey)
+  signedContract = contractTx.sign(fundingPrivateKey)
+  const contractTxid = await broadcast(signedContract.serialize(true))
+  const amount = await utils.getVoutAmount(contractTxid, 0)
+  expect(amount).to.equal(supply / 100000000)
+})
+
+it('Contract - Successful With Unsigned No Fee', async () => {
+  const contractHex = await unsignedContract(
+    issuerPrivateKey.publicKey,
+    contractUtxos,
+    null,
+    null,
+    schema,
+    supply
+  )
+  const contractTxJson = JSON.parse(contractHex.json)
+  const contractTx = new bsv.Transaction(contractTxJson)
+  const signedContract = contractTx.sign(issuerPrivateKey)
+  const contractTxid = await broadcast(signedContract.serialize(true))
+  const amount = await utils.getVoutAmount(contractTxid, 0)
+  expect(amount).to.equal(supply / 100000000)
+})
+
 it('Contract - Wrong Funding Private Key Throws Error', async () => {
   const incorrectPrivateKey = bsv.PrivateKey()
-  const contractHex = contract(
+  const contractHex = await contract(
     issuerPrivateKey,
     contractUtxos,
     fundingUtxos,
@@ -126,28 +162,10 @@ it('Contract - Wrong Funding Private Key Throws Error', async () => {
   }
 })
 
-it('Contract - Wrong Contract Private Key Throws Error', async () => {
-  const incorrectPrivateKey = bsv.PrivateKey()
-  const contractHex = contract(
-    incorrectPrivateKey,
-    contractUtxos,
-    fundingUtxos,
-    fundingPrivateKey,
-    schema,
-    supply
-  )
-  try {
-    await broadcast(contractHex)
-    expect(false).toBeTruthy()
-  } catch (e) {
-    expect(e).to.be.instanceOf(Error)
-    expect(e.response.data).to.contain('mandatory-script-verify-flag-failed')
-  }
-})
-
 async function setup () {
   issuerPrivateKey = bsv.PrivateKey()
   fundingPrivateKey = bsv.PrivateKey()
+  keymap.set(issuerPrivateKey, fundingPrivateKey)
   contractUtxos = await getFundsFromFaucet(issuerPrivateKey.toAddress(process.env.NETWORK).toString())
   fundingUtxos = await getFundsFromFaucet(fundingPrivateKey.toAddress(process.env.NETWORK).toString())
   publicKeyHash = bsv.crypto.Hash.sha256ripemd160(issuerPrivateKey.publicKey.toBuffer()).toString('hex')

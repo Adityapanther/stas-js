@@ -7,7 +7,8 @@ const {
   contract,
   issue,
   redeem,
-  redeemWithCallback
+  redeemWithCallback,
+  unsignedRedeem
 } = require('../../index')
 
 const {
@@ -17,6 +18,7 @@ const {
 } = require('../../index').utils
 
 const { sighash } = require('../../lib/stas')
+const { bitcoinToSatoshis } = require('../../lib/utils')
 
 let issuerPrivateKey
 let fundingPrivateKey
@@ -29,12 +31,13 @@ let bobAddr
 let aliceAddr
 let issueTxid
 let issueTx
+const keyMap = new Map()
 
-const aliceSignatureCallback = (tx, i, script, satoshis) => {
-  return bsv.Transaction.sighash.sign(tx, alicePrivateKey, sighash, i, script, satoshis)
+const aliceSignatureCallback = async (tx, i, script, satoshis) => {
+  return bsv.Transaction.sighash.sign(tx, alicePrivateKey, sighash, i, script, satoshis).toTxFormat().toString('hex')
 }
-const paymentSignatureCallback = (tx, i, script, satoshis) => {
-  return bsv.Transaction.sighash.sign(tx, fundingPrivateKey, sighash, i, script, satoshis)
+const paymentSignatureCallback = async (tx, i, script, satoshis) => {
+  return bsv.Transaction.sighash.sign(tx, fundingPrivateKey, sighash, i, script, satoshis).toTxFormat().toString('hex')
 }
 
 beforeEach(async () => {
@@ -42,7 +45,7 @@ beforeEach(async () => {
 })
 
 it('Redeem - Successful Redeem 1', async () => {
-  const redeemHex = redeem(
+  const redeemHex = await redeem(
     alicePrivateKey,
     issuerPrivateKey.publicKey,
     utils.getUtxo(issueTxid, issueTx, 0),
@@ -56,7 +59,7 @@ it('Redeem - Successful Redeem 1', async () => {
 })
 
 it('Redeem - Successful Redeem 2', async () => {
-  const redeemHex = redeem(
+  const redeemHex = await redeem(
     bobPrivateKey,
     issuerPrivateKey.publicKey,
     utils.getUtxo(issueTxid, issueTx, 1),
@@ -70,7 +73,7 @@ it('Redeem - Successful Redeem 2', async () => {
 })
 
 it('Redeem - Successful Redeem No Fee ', async () => {
-  const redeemHex = redeem(
+  const redeemHex = await redeem(
     alicePrivateKey,
     issuerPrivateKey.publicKey,
     utils.getUtxo(issueTxid, issueTx, 0),
@@ -84,7 +87,7 @@ it('Redeem - Successful Redeem No Fee ', async () => {
 })
 
 it('Redeem - Successful Redeem With Callback and Fee', async () => {
-  const redeemHex = redeemWithCallback(
+  const redeemHex = await redeemWithCallback(
     alicePrivateKey.publicKey,
     issuerPrivateKey.publicKey,
     utils.getUtxo(issueTxid, issueTx, 0),
@@ -100,7 +103,7 @@ it('Redeem - Successful Redeem With Callback and Fee', async () => {
 })
 
 it('Redeem - Successful Redeem With Callback and No Fee', async () => {
-  const redeemHex = redeemWithCallback(
+  const redeemHex = await redeemWithCallback(
     alicePrivateKey.publicKey,
     issuerPrivateKey.publicKey,
     utils.getUtxo(issueTxid, issueTx, 0),
@@ -115,21 +118,53 @@ it('Redeem - Successful Redeem With Callback and No Fee', async () => {
   await utils.isTokenBalance(bobAddr, 3000)
 })
 
+it('Redeem - Successful Redeem With Unsigned & Fee', async () => {
+  const unsignedRedeemReturn = await unsignedRedeem(
+    alicePrivateKey.publicKey,
+    issuerPrivateKey.publicKey,
+    utils.getUtxo(issueTxid, issueTx, 0),
+    utils.getUtxo(issueTxid, issueTx, 2),
+    fundingPrivateKey.publicKey
+  )
+  const redeemTx = bsv.Transaction(unsignedRedeemReturn.hex)
+  utils.signScriptWithUnlocking(unsignedRedeemReturn, redeemTx, keyMap)
+  const redeemTxid = await broadcast(redeemTx.serialize(true))
+  expect(await utils.getAmount(redeemTxid, 0)).to.equal(0.00007)
+  await utils.isTokenBalance(aliceAddr, 0)
+  await utils.isTokenBalance(bobAddr, 3000)
+})
+
+it('Redeem - Successful Redeem With Unsigned & No Fee', async () => {
+  const unsignedRedeemReturn = await unsignedRedeem(
+    alicePrivateKey.publicKey,
+    issuerPrivateKey.publicKey,
+    utils.getUtxo(issueTxid, issueTx, 0),
+    null,
+    null
+  )
+  const redeemTx = bsv.Transaction(unsignedRedeemReturn.hex)
+  utils.signScriptWithUnlocking(unsignedRedeemReturn, redeemTx, keyMap)
+  const redeemTxid = await broadcast(redeemTx.serialize(true))
+  expect(await utils.getAmount(redeemTxid, 0)).to.equal(0.00007)
+  await utils.isTokenBalance(aliceAddr, 0)
+  await utils.isTokenBalance(bobAddr, 3000)
+})
+
 it('Redeem - Incorrect Stas UTXO Amount Throws Error', async () => {
-  const redeemHex = redeem(
+  const redeemHex = await redeem(
     alicePrivateKey,
     issuerPrivateKey.publicKey,
     {
       txid: issueTxid,
       vout: 0,
       scriptPubKey: issueTx.vout[0].scriptPubKey.hex,
-      amount: 0.1
+      satoshis: 1000
     },
     {
       txid: issueTxid,
       vout: 2,
       scriptPubKey: issueTx.vout[2].scriptPubKey.hex,
-      amount: issueTx.vout[2].value
+      satoshis: bitcoinToSatoshis(issueTx.vout[2].value)
     },
     fundingPrivateKey
   )
@@ -143,20 +178,20 @@ it('Redeem - Incorrect Stas UTXO Amount Throws Error', async () => {
 })
 
 it('Redeem - Incorrect Funding UTXO Amount Throws Error', async () => {
-  const redeemHex = redeem(
+  const redeemHex = await redeem(
     alicePrivateKey,
     issuerPrivateKey.publicKey,
     {
       txid: issueTxid,
       vout: 0,
       scriptPubKey: issueTx.vout[0].scriptPubKey.hex,
-      amount: issueTx.vout[0].value
+      satoshis: bitcoinToSatoshis(issueTx.vout[0].value)
     },
     {
       txid: issueTxid,
       vout: 2,
       scriptPubKey: issueTx.vout[2].scriptPubKey.hex,
-      amount: 0.1
+      amount: 1000
     },
     fundingPrivateKey
   )
@@ -174,7 +209,7 @@ it(
   async () => {
     const incorrectKey = bsv.PrivateKey()
 
-    const redeemHex = redeem(
+    const redeemHex = await redeem(
       alicePrivateKey,
       incorrectKey.publicKey,
       utils.getUtxo(issueTxid, issueTx, 0),
@@ -196,7 +231,7 @@ it(
   async () => {
     const incorrectKey = bsv.PrivateKey()
 
-    const redeemHex = redeem(
+    const redeemHex = await redeem(
       incorrectKey,
       issuerPrivateKey.publicKey,
       utils.getUtxo(issueTxid, issueTx, 0),
@@ -218,7 +253,7 @@ it(
   async () => {
     const incorrectKey = bsv.PrivateKey()
 
-    const redeemHex = redeem(
+    const redeemHex = await redeem(
       alicePrivateKey,
       issuerPrivateKey.publicKey,
       utils.getUtxo(issueTxid, issueTx, 0),
@@ -237,9 +272,13 @@ it(
 
 async function setup () {
   issuerPrivateKey = bsv.PrivateKey()
+  keyMap.set(issuerPrivateKey.publicKey, issuerPrivateKey)
   fundingPrivateKey = bsv.PrivateKey()
+  keyMap.set(fundingPrivateKey.publicKey, fundingPrivateKey)
   bobPrivateKey = bsv.PrivateKey()
+  keyMap.set(bobPrivateKey.publicKey, bobPrivateKey)
   alicePrivateKey = bsv.PrivateKey()
+  keyMap.set(alicePrivateKey.publicKey, alicePrivateKey)
   contractUtxos = await getFundsFromFaucet(issuerPrivateKey.toAddress(process.env.NETWORK).toString())
   fundingUtxos = await getFundsFromFaucet(fundingPrivateKey.toAddress(process.env.NETWORK).toString())
   publicKeyHash = bsv.crypto.Hash.sha256ripemd160(issuerPrivateKey.publicKey.toBuffer()).toString('hex')
@@ -249,7 +288,7 @@ async function setup () {
   const supply = 10000
   const schema = utils.schema(publicKeyHash, symbol, supply)
 
-  const contractHex = contract(
+  const contractHex = await contract(
     issuerPrivateKey,
     contractUtxos,
     fundingUtxos,
@@ -260,7 +299,7 @@ async function setup () {
   const contractTxid = await broadcast(contractHex)
   const contractTx = await getTransaction(contractTxid)
 
-  const issueHex = issue(
+  const issueHex = await issue(
     issuerPrivateKey,
     utils.getIssueInfo(aliceAddr, 7000, bobAddr, 3000),
     utils.getUtxo(contractTxid, contractTx, 0),

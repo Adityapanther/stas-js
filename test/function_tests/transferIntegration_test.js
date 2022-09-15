@@ -7,7 +7,8 @@ const {
   contract,
   issue,
   transfer,
-  transferWithCallback
+  transferWithCallback,
+  unsignedTransfer
 } = require('../../index')
 
 const {
@@ -17,6 +18,7 @@ const {
 } = require('../../index').utils
 
 const { sighash } = require('../../lib/stas')
+const unsigneRedeem = require('../../lib/unsignedRedeem')
 
 let issuerPrivateKey
 let fundingPrivateKey
@@ -32,14 +34,13 @@ let symbol
 let issueTxid
 let issueTx
 let issueOutFundingVout
+const keyMap = new Map()
 
-const wait = 30000
-
-const bobSignatureCallback = (tx, i, script, satoshis) => {
-  return bsv.Transaction.sighash.sign(tx, bobPrivateKey, sighash, i, script, satoshis)
+const bobSignatureCallback = async (tx, i, script, satoshis) => {
+  return bsv.Transaction.sighash.sign(tx, bobPrivateKey, sighash, i, script, satoshis).toTxFormat().toString('hex')
 }
-const paymentSignatureCallback = (tx, i, script, satoshis) => {
-  return bsv.Transaction.sighash.sign(tx, fundingPrivateKey, sighash, i, script, satoshis)
+const paymentSignatureCallback = async (tx, i, script, satoshis) => {
+  return bsv.Transaction.sighash.sign(tx, fundingPrivateKey, sighash, i, script, satoshis).toTxFormat().toString('hex')
 }
 
 beforeEach(async () => {
@@ -48,7 +49,7 @@ beforeEach(async () => {
 })
 
 it('Transfer - Successful With Fee 1', async () => {
-  const transferHex = transfer(
+  const transferHex = await transfer(
     bobPrivateKey,
     utils.getUtxo(issueTxid, issueTx, 1),
     aliceAddr,
@@ -62,7 +63,7 @@ it('Transfer - Successful With Fee 1', async () => {
 })
 
 it('Transfer - Successful With Fee 2', async () => {
-  const transferHex = transfer(
+  const transferHex = await transfer(
     alicePrivateKey,
     utils.getUtxo(issueTxid, issueTx, 0),
     bobAddr,
@@ -78,7 +79,7 @@ it('Transfer - Successful With Fee 2', async () => {
 it('Transfer - Successful With Fee 3', async () => {
   const davePrivateKey = bsv.PrivateKey()
   const daveAddr = davePrivateKey.toAddress(process.env.NETWORK).toString()
-  const transferHex = transfer(
+  const transferHex = await transfer(
     bobPrivateKey,
     utils.getUtxo(issueTxid, issueTx, 1),
     daveAddr,
@@ -93,7 +94,7 @@ it('Transfer - Successful With Fee 3', async () => {
 })
 
 it('Transfer - Successful With Fee 4', async () => {
-  const transferHex = transfer(
+  const transferHex = await transfer(
     bobPrivateKey,
     utils.getUtxo(issueTxid, issueTx, 1),
     bobAddr,
@@ -107,7 +108,7 @@ it('Transfer - Successful With Fee 4', async () => {
 })
 
 it('Transfer - Successful to Funding Address', async () => {
-  const transferHex = transfer(
+  const transferHex = await transfer(
     bobPrivateKey,
     utils.getUtxo(issueTxid, issueTx, 1),
     fundingAddress,
@@ -121,7 +122,7 @@ it('Transfer - Successful to Funding Address', async () => {
 })
 
 it('Transfer - Successful No Fee', async () => {
-  const transferHex = transfer(
+  const transferHex = await transfer(
     bobPrivateKey,
     utils.getUtxo(issueTxid, issueTx, 1),
     aliceAddr,
@@ -135,7 +136,7 @@ it('Transfer - Successful No Fee', async () => {
 })
 
 it('Transfer - Successful Callback With No Fee', async () => {
-  const transferHex = transferWithCallback(
+  const transferHex = await transferWithCallback(
     bobPrivateKey.publicKey,
     utils.getUtxo(issueTxid, issueTx, 1),
     aliceAddr,
@@ -151,7 +152,7 @@ it('Transfer - Successful Callback With No Fee', async () => {
 })
 
 it('Transfer - Successful Callback With Fee', async () => {
-  const transferHex = transferWithCallback(
+  const transferHex = await transferWithCallback(
     bobPrivateKey.publicKey,
     utils.getUtxo(issueTxid, issueTx, 1),
     bobAddr,
@@ -166,12 +167,43 @@ it('Transfer - Successful Callback With Fee', async () => {
   await utils.isTokenBalance(aliceAddr, 7000)
 })
 
-it(
-  'Transfer -  Transfer To Issuer Address (Splitable) Throws Error',
+it('Transfer - Successful Unsigned & Fee', async () => {
+  const unsignedTransferReturn = await unsignedTransfer(
+    bobPrivateKey.publicKey,
+    utils.getUtxo(issueTxid, issueTx, 1),
+    aliceAddr,
+    utils.getUtxo(issueTxid, issueTx, issueOutFundingVout),
+    fundingPrivateKey.publicKey
+  )
+  const transferTx = bsv.Transaction(unsignedTransferReturn.hex)
+  utils.signScriptWithUnlocking(unsignedTransferReturn, transferTx, keyMap)
+  const transferTxid = await broadcast(transferTx.serialize(true))
+  expect(await utils.getVoutAmount(transferTxid, 0)).to.equal(0.00003)
+  await utils.isTokenBalance(aliceAddr, 10000)
+  await utils.isTokenBalance(bobAddr, 0)
+})
+
+it('Transfer - Successful Unsigned & No Fee', async () => {
+  const unsignedTransferReturn = await unsignedTransfer(
+    bobPrivateKey.publicKey,
+    utils.getUtxo(issueTxid, issueTx, 1),
+    aliceAddr,
+    null,
+    null
+  )
+  const transferTx = bsv.Transaction(unsignedTransferReturn.hex)
+  utils.signScriptWithUnlocking(unsignedTransferReturn, transferTx, keyMap)
+  const transferTxid = await broadcast(transferTx.serialize(true))
+  expect(await utils.getVoutAmount(transferTxid, 0)).to.equal(0.00003)
+  await utils.isTokenBalance(aliceAddr, 10000)
+  await utils.isTokenBalance(bobAddr, 0)
+})
+
+it('Transfer -  Transfer To Issuer Address (Splitable) Throws Error',
   async () => {
     const issuerAddr = issuerPrivateKey.toAddress(process.env.NETWORK).toString()
     try {
-      transfer(
+      await transfer(
         issuerPrivateKey,
         utils.getUtxo(issueTxid, issueTx, 1),
         issuerAddr,
@@ -189,7 +221,7 @@ it(
 
 it('Transfer - Invalid Issuer Private Key Throws Error', async () => {
   const incorrectPK = bsv.PrivateKey()
-  const transferHex = transfer(
+  const transferHex = await transfer(
     incorrectPK,
     utils.getUtxo(issueTxid, issueTx, 1),
     aliceAddr,
@@ -208,7 +240,7 @@ it('Transfer - Invalid Issuer Private Key Throws Error', async () => {
 
 it('Transfer - Invalid Funding Private Key Throws Error', async () => {
   const incorrectPK = bsv.PrivateKey()
-  const transferHex = transfer(
+  const transferHex = await transfer(
     bobPrivateKey,
     utils.getUtxo(issueTxid, issueTx, 1),
     aliceAddr,
@@ -227,9 +259,13 @@ it('Transfer - Invalid Funding Private Key Throws Error', async () => {
 
 async function setup () {
   issuerPrivateKey = bsv.PrivateKey()
+  keyMap.set(issuerPrivateKey.publicKey, issuerPrivateKey)
   fundingPrivateKey = bsv.PrivateKey()
+  keyMap.set(fundingPrivateKey.publicKey, fundingPrivateKey)
   bobPrivateKey = bsv.PrivateKey()
+  keyMap.set(bobPrivateKey.publicKey, bobPrivateKey)
   alicePrivateKey = bsv.PrivateKey()
+  keyMap.set(alicePrivateKey.publicKey, alicePrivateKey)
   contractUtxos = await getFundsFromFaucet(issuerPrivateKey.toAddress(process.env.NETWORK).toString())
   fundingUtxos = await getFundsFromFaucet(fundingPrivateKey.toAddress(process.env.NETWORK).toString())
   publicKeyHash = bsv.crypto.Hash.sha256ripemd160(issuerPrivateKey.publicKey.toBuffer()).toString('hex')
@@ -240,7 +276,7 @@ async function setup () {
   bobAddr = bobPrivateKey.toAddress(process.env.NETWORK).toString()
   fundingAddress = fundingPrivateKey.toAddress(process.env.NETWORK).toString()
 
-  const contractHex = contract(
+  const contractHex = await contract(
     issuerPrivateKey,
     contractUtxos,
     fundingUtxos,
@@ -251,7 +287,7 @@ async function setup () {
   const contractTxid = await broadcast(contractHex)
   const contractTx = await getTransaction(contractTxid)
 
-  const issueHex = issue(
+  const issueHex = await issue(
     issuerPrivateKey,
     utils.getIssueInfo(aliceAddr, 7000, bobAddr, 3000),
     utils.getUtxo(contractTxid, contractTx, 0),

@@ -1,7 +1,6 @@
 const expect = require('chai').expect
 const utils = require('../utils/test_utils')
 const bsv = require('bsv')
-const mergeUtil = require('../utils/mergeWithOutValidation')
 require('dotenv').config()
 
 const {
@@ -36,7 +35,7 @@ it('Attempt To Merge Token with Different Owners Via SDK Throws Error',
     const invalidSplitTxObj = await invalidToken()
 
     try {
-      merge(
+      await merge(
         bobPrivateKey,
         [{
           tx: validSplitTxObj,
@@ -62,40 +61,6 @@ it('Attempt To Merge Token with Different Owners Via SDK Throws Error',
   }
 )
 
-it(
-  'Attempt To Merge Token with Different Owners Without SDK Validation Throws Error',
-  async () => {
-    const validSplitTxObj = await validToken()
-    const invalidSplitTxObj = await invalidToken()
-
-    const mergeHex = mergeUtil.mergeWithOutValidation(
-      bobPrivateKey,
-      [{
-        tx: validSplitTxObj,
-        vout: 0
-      },
-      {
-        tx: invalidSplitTxObj,
-        vout: 1
-      }],
-      aliceAddr,
-      {
-        txid: splitTxid,
-        vout: 2,
-        scriptPubKey: splitTx.vout[2].scriptPubKey.hex,
-        amount: splitTx.vout[2].value
-      },
-      fundingPrivateKey
-    )
-    try {
-      await broadcast(mergeHex)
-    } catch (e) {
-      expect(e).to.be.instanceOf(Error)
-      expect(e.message).to.eql('Request failed with status code 400')
-    }
-  }
-)
-
 async function validToken () {
   const contractUtxos = await getFundsFromFaucet(issuerPrivateKey.toAddress(process.env.NETWORK).toString())
   const fundingUtxos = await getFundsFromFaucet(fundingPrivateKey.toAddress(process.env.NETWORK).toString())
@@ -104,7 +69,7 @@ async function validToken () {
   const schema = utils.schema(publicKeyHash, symbol, supply)
 
   // change goes back to the fundingPrivateKey
-  const contractHex = contract(
+  const contractHex = await contract(
     issuerPrivateKey,
     contractUtxos,
     fundingUtxos,
@@ -130,7 +95,7 @@ async function validToken () {
   ]
   let issueHex
   try {
-    issueHex = issue(
+    issueHex = await issue(
       issuerPrivateKey,
       issueInfo,
       {
@@ -160,7 +125,7 @@ async function validToken () {
 
   const issueOutFundingVout = issueTx.vout.length - 1
 
-  const transferHex = transfer(
+  const transferHex = await transfer(
     bobPrivateKey,
     {
       txid: issueTxid,
@@ -188,7 +153,7 @@ async function validToken () {
   splitDestinations[0] = { address: bobAddr, amount: bitcoinToSatoshis(bobAmount1) }
   splitDestinations[1] = { address: bobAddr, amount: bitcoinToSatoshis(bobAmount2) }
 
-  const splitHex = split(
+  const splitHex = await split(
     alicePrivateKey,
     {
       txid: transferTxid,
@@ -226,7 +191,7 @@ async function invalidToken () {
   const schema = utils.schema(publicKeyHash, symbol, supply)
 
   // change goes back to the fundingPrivateKey
-  const contractHex = contract(
+  const contractHex = await contract(
     issuerPrivateKey,
     contractUtxos,
     fundingUtxos,
@@ -252,7 +217,7 @@ async function invalidToken () {
   ]
   let issueHex
   try {
-    issueHex = issue(
+    issueHex = await issue(
       issuerPrivateKey,
       issueInfo,
       {
@@ -282,7 +247,7 @@ async function invalidToken () {
 
   const issueOutFundingVout = issueTx.vout.length - 1
 
-  const transferHex = transfer(
+  const transferHex = await transfer(
     bobPrivateKey,
     {
       txid: issueTxid,
@@ -310,7 +275,7 @@ async function invalidToken () {
   splitDestinations[0] = { address: bobAddr, amount: bitcoinToSatoshis(bobAmount1) }
   splitDestinations[1] = { address: bobAddr, amount: bitcoinToSatoshis(bobAmount2) }
 
-  const splitHex = split(
+  const splitHex = await split(
     alicePrivateKey,
     {
       txid: transferTxid,

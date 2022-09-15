@@ -43,7 +43,7 @@ it('Merge Invalid Token Invalidates both token utxos', async () => {
   const symbol = 'TAALT'
   const schema = utils.schema(publicKeyHash, symbol, supply)
 
-  const contractHex = contract(
+  const contractHex = await contract(
     issuerPrivateKey,
     contractUtxos,
     fundingUtxos,
@@ -69,7 +69,7 @@ it('Merge Invalid Token Invalidates both token utxos', async () => {
   ]
   let issueHex
   try {
-    issueHex = issue(
+    issueHex = await issue(
       issuerPrivateKey,
       issueInfo,
       {
@@ -97,26 +97,21 @@ it('Merge Invalid Token Invalidates both token utxos', async () => {
   console.log(`Issue TX:        ${issueTxid}`)
   const issueTx = await getTransaction(issueTxid)
 
-  const transferhex = transfer(
+  const transferhex = await transfer(
     alicePrivateKey,
-    {
-      txid: issueTxid,
-      vout: 0,
-      scriptPubKey: issueTx.vout[0].scriptPubKey.hex,
-      amount: issueTx.vout[0].value
-    },
+    utils.getUtxo(issueTxid, issueTx, 0),
     attackerAddress,
-    fundingUtxos2,
+    utils.getUtxo(issueTxid, issueTx, 2),
     fundingPrivateKey
   )
-
+  console.log(transferhex)
   const transferTxid = await broadcast(transferhex)
   console.log(`Transfer TX:     ${transferTxid}`)
   const transfertx = await getTransaction(transferTxid)
   const validSplit = new bsv.Transaction(transferhex)
 
   // we create stas tx and assign to attacker address
-  hexSymbol = Buffer.from(symbol).toString('hex')
+  const hexSymbol = Buffer.from(symbol).toString('hex')
   attackerFundsUtxo = attackerFundsUtxo[0]
   console.log(attackerFundsUtxo)
   const tx = new bsv.Transaction()
@@ -127,11 +122,11 @@ it('Merge Invalid Token Invalidates both token utxos', async () => {
     satoshis: attackerFundsUtxo.amount
   }))
   tx.sign(attackerPrivateKey)
-
+  console.log(tx.serialize(true))
   const txId = await broadcast(tx.serialize(true))
   const attackerObj = new bsv.Transaction(tx.serialize(true))
 
-  const mergeHex = merge(
+  const mergeHex = await merge(
     attackerPrivateKey,
     [{
       tx: validSplit,
@@ -142,16 +137,11 @@ it('Merge Invalid Token Invalidates both token utxos', async () => {
       vout: 0
     }],
     attackerAddress,
-    {
-      txid: issueTxid,
-      vout: 2,
-      scriptPubKey: issueTx.vout[2].scriptPubKey.hex,
-      amount: issueTx.vout[2].value
-    },
+    utils.getUtxo(transferTxid, transfertx, 1),
     fundingPrivateKey
   )
+  console.log(mergeHex)
   const mergeTxId = await broadcast(mergeHex)
   console.log(`Merge TX: ${mergeTxId}`)
-  console.log('Bob Balance ' + (await utils.getTokenBalance(attackerAddress)))
-  expect(await utils.getTokenBalance(attackerAddress)).to.equal(0)
+  expect(await utils.isTokenBalance(attackerAddress, 0))
 })

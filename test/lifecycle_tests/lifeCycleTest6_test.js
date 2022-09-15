@@ -43,7 +43,7 @@ it(
     const schema = utils.schema(publicKeyHash, symbol, supply)
 
     // change goes back to the fundingPrivateKey
-    const contractHex = contract(
+    const contractHex = await contract(
       issuerPrivateKey,
       contractUtxos,
       fundingUtxos,
@@ -77,7 +77,7 @@ it(
         data: '4_data'
       }]
 
-    const issueHex = issue(
+    const issueHex = await issue(
       issuerPrivateKey,
       issueInfo,
       utils.getUtxo(contractTxid, contractTx, 0),
@@ -105,7 +105,7 @@ it(
 
     const issueOutFundingVout = issueTx.vout.length - 1
 
-    const transferHex = transfer(
+    const transferHex = await transfer(
       bobPrivateKey,
       utils.getUtxo(issueTxid, issueTx, 0),
       aliceAddr,
@@ -120,7 +120,7 @@ it(
     await utils.isTokenBalance(daveAddr, 10000)
     await utils.isTokenBalance(emmaAddr, 10000)
 
-    const transferHex2 = transfer(
+    const transferHex2 = await transfer(
       alicePrivateKey,
       utils.getUtxo(issueTxid, issueTx, 1),
       emmaAddr,
@@ -135,7 +135,7 @@ it(
     await utils.isTokenBalance(daveAddr, 10000)
     await utils.isTokenBalance(emmaAddr, 20000)
 
-    const transferHex3 = transfer(
+    const transferHex3 = await transfer(
       davePrivateKey,
       utils.getUtxo(issueTxid, issueTx, 2),
       emmaAddr,
@@ -150,7 +150,7 @@ it(
     await utils.isTokenBalance(daveAddr, 0)
     await utils.isTokenBalance(emmaAddr, 30000)
 
-    const transferHex4 = transfer(
+    const transferHex4 = await transfer(
       emmaPrivateKey,
       utils.getUtxo(issueTxid, issueTx, 3),
       bobAddr,
@@ -160,7 +160,6 @@ it(
     const transferTxid4 = await broadcast(transferHex4)
     console.log(`Transfer TX4:     ${transferTxid4}`)
     const transferTx4 = await getTransaction(transferTxid4)
-
     expect(await utils.getVoutAmount(transferTxid, 0)).to.equal(0.0001)
     await utils.isTokenBalance(bobAddr, 10000)
     await utils.isTokenBalance(aliceAddr, 10000)
@@ -173,7 +172,7 @@ it(
     splitDestinations[0] = { address: daveAddr, amount: bitcoinToSatoshis(bobAmount1) }
     splitDestinations[1] = { address: daveAddr, amount: bitcoinToSatoshis(bobAmount2) }
 
-    const splitHex = split(
+    const splitHex = await split(
       bobPrivateKey,
       utils.getUtxo(transferTxid4, transferTx4, 0),
       splitDestinations,
@@ -192,7 +191,7 @@ it(
 
     const splitTxObj = new bsv.Transaction(splitHex)
 
-    const mergeHex = merge(
+    const mergeHex = await merge(
       davePrivateKey,
       utils.getMergeUtxo(splitTxObj),
       aliceAddr,
@@ -215,7 +214,7 @@ it(
     split2Destinations[0] = { address: aliceAddr, amount: bitcoinToSatoshis(aliceAmount1) }
     split2Destinations[1] = { address: aliceAddr, amount: bitcoinToSatoshis(aliceAmount2) }
 
-    const splitHex2 = split(
+    const splitHex2 = await split(
       alicePrivateKey,
       utils.getUtxo(mergeTxid, mergeTx, 0),
       split2Destinations,
@@ -233,99 +232,19 @@ it(
     await utils.isTokenBalance(daveAddr, 0)
     await utils.isTokenBalance(emmaAddr, 20000)
 
-    //   // Now mergeSplit
-    //   const splitTxObj2 = new bsv.Transaction(splitHex2)
-
-    //   const aliceAmountSatoshis = bitcoinToSatoshis(splitTx2.vout[0].value) / 2
-    //   const bobAmountSatoshis = bitcoinToSatoshis(splitTx2.vout[0].value) + bitcoinToSatoshis(splitTx2.vout[1].value) - aliceAmountSatoshis
-
-    //   const mergeSplitHex = mergeSplit(
-    //     alicePrivateKey,
-    //     issuerPrivateKey.publicKey,
-    //     utils.getMergeSplitUtxo(splitTxObj2, splitTx2),
-    //     aliceAddr,
-    //     aliceAmountSatoshis,
-    //     bobAddr,
-    //     bobAmountSatoshis,
-    //     utils.getUtxo(splitTxid2, splitTx2, 2),
-    //     fundingPrivateKey
-    //   )
-
-    //   const mergeSplitTxid = await broadcast(mergeSplitHex)
-    //   console.log(`MergeSplit TX:   ${mergeSplitTxid}`)
-    //   const mergeSplitTx = await getTransaction(mergeSplitTxid)
-    //   expect(await utils.getVoutAmount(mergeSplitTxid, 0)).to.equal(0.0000075)
-    //   expect(await utils.getVoutAmount(mergeSplitTxid, 1)).to.equal(0.0000225)
-    //   console.log('Alice Balance ' + await utils.getTokenBalance(aliceAddr))
-    //   console.log('Bob Balance ' + await utils.getTokenBalance(bobAddr))
-
-    //   // Alice wants to redeem the money from bob...
-    //   const redeemHex = redeem(
-    //     alicePrivateKey,
-    //     issuerPrivateKey.publicKey,
-    //     utils.getUtxo(mergeSplitTxid, mergeSplitTx, 0),
-    //     utils.getUtxo(mergeSplitTxid, mergeSplitTx, 2),
-    //     fundingPrivateKey
-    //   )
-    //   const redeemTxid = await broadcast(redeemHex)
-    //   console.log(`Redeem TX:       ${redeemTxid}`)
-    //   expect(await utils.getVoutAmount(redeemTxid, 0)).to.equal(0.0000075)
-    //   console.log('Alice Balance ' + await utils.getTokenBalance(aliceAddr))
-    //   console.log('Bob Balance ' + await utils.getTokenBalance(bobAddr))
+    const redeemHex = await redeem(
+      alicePrivateKey,
+      issuerPrivateKey.publicKey,
+      utils.getUtxo(splitTxid2, splitTx2, 0),
+      utils.getUtxo(splitTxid2, splitTx2, 2),
+      fundingPrivateKey
+    )
+    const redeemTxid = await broadcast(redeemHex)
+    console.log(`Redeem TX:       ${redeemTxid}`)
+    expect(await utils.getVoutAmount(redeemTxid, 0)).to.equal(0.00005)
+    await utils.isTokenBalance(bobAddr, 0)
+    await utils.isTokenBalance(aliceAddr, 15000)
+    await utils.isTokenBalance(daveAddr, 0)
+    await utils.isTokenBalance(emmaAddr, 20000)
   }
 )
-
-function get5IssueAddresses () {
-  return issueInfo = [
-    {
-      addr: addr1,
-      satoshis: 1000,
-      data: '1_data'
-    },
-    {
-      addr: addr2,
-      satoshis: 1000,
-      data: '2_data'
-    },
-    {
-      addr: addr3,
-      satoshis: 1000,
-      data: '3_data'
-    },
-    {
-      addr: addr4,
-      satoshis: 1000,
-      data: '4_data'
-    },
-    {
-      addr: addr5,
-      satoshis: 1000,
-      data: '5_data'
-    },
-    {
-      addr: addr6,
-      satoshis: 1000,
-      data: '6_data'
-    },
-    {
-      addr: addr7,
-      satoshis: 1000,
-      data: '7_data'
-    },
-    {
-      addr: addr8,
-      satoshis: 1000,
-      data: '8_data'
-    },
-    {
-      addr: addr9,
-      satoshis: 1000,
-      data: '9_data'
-    },
-    {
-      addr: addr10,
-      satoshis: 1000,
-      data: '10_data'
-    }
-  ]
-}
