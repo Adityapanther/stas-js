@@ -8,7 +8,7 @@ const {
   updateStasScript
 } = require('../lib/stas')
 
-const bsv = require('bsv')
+const bsv = require('@vaionex/bsv')
 
 const assert = require('assert')
 

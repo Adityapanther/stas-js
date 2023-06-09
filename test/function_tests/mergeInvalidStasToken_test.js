@@ -1,4 +1,4 @@
-const bsv = require('bsv')
+const bsv = require('@vaionex/bsv')
 const util = require('../../lib/stas')
 const utils = require('../utils/test_utils')
 const expect = require('chai').expect

@@ -89,7 +89,7 @@ yarn start
 
 Then you can replace the ```src/App.js``` with the following code:
 ```javascript
-import bsv from 'bsv'
+import bsv from '@vaionex/bsv'
 import React, { useState } from 'react'
 
 import './App.css'

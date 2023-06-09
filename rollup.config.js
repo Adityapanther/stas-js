@@ -19,7 +19,7 @@ const config = {
     },
     {
       globals: {
-        bsv: 'bsv'
+        bsv: '@vaionex/bsv'
       },
       dir: './dist',
       format: 'esm',

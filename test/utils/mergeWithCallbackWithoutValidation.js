@@ -1,4 +1,4 @@
-const bsv = require('bsv')
+const bsv = require('@vaionex/bsv')
 require('dotenv').config()
 const {
   Varint

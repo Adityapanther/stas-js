@@ -1,7 +1,7 @@
 const axios = require('axios')
 const expect = require('chai').expect
 const axiosRetry = require('axios-retry')
-const bsv = require('bsv')
+const bsv = require('@vaionex/bsv')
 require('dotenv').config()
 const { bitcoinToSatoshis } = require('../../index').utils
 

@@ -1,5 +1,5 @@
 const utils = require('../utils/test_utils')
-const bsv = require('bsv')
+const bsv = require('@vaionex/bsv')
 const expect = require('chai').expect
 
 require('dotenv').config()

@@ -1,6 +1,6 @@
 const expect = require('chai').expect
 const utils = require('../utils/test_utils')
-const bsv = require('bsv')
+const bsv = require('@vaionex/bsv')
 require('dotenv').config()
 
 const {
@@ -18,7 +18,7 @@ const {
 } = require('../../index').utils
 
 const { sighash } = require('../../lib/stas')
-const PublicKey = require('bsv/lib/publickey')
+const PublicKey = require('@vaionex/bsv/lib/publickey')
 
 let issuerPrivateKey
 let fundingPrivateKey

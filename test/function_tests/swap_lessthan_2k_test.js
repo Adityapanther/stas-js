@@ -1,7 +1,7 @@
 // const expect = require('chai').expect
 // const assert = require('chai').assert
 const utils = require('../utils/test_utils')
-const bsv = require('bsv')
+const bsv = require('@vaionex/bsv')
 // const assert = require('assert')
 const expect = require('chai').expect
 
