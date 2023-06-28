@@ -1,6 +1,6 @@
 {
   "name": "stas-js",
-  "version": "1.2.9",
+  "version": "1.2.10",
   "description": "This library will create various types of STAS token transactions that add token functionality to the BSV blockchain.",
   "main": "index.js",
   "module": "dist/index",
@@ -31,13 +31,13 @@
     "test": "^0.6.0"
   },
   "peerDependencies": {
-    "@vaionex/bsv": "^1.5.8"
+    "@vaionex/bsv": "^1.5.9"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^21.0.2",
     "@rollup/plugin-json": "^4.1.0",
     "@rollup/plugin-node-resolve": "^13.1.3",
-    "@vaionex/bsv": "^1.5.8",
+    "@vaionex/bsv": "^1.5.9",
     "jest": "^27.4.7",
     "rollup": "^2.70.0",
     "rollup-plugin-node-builtins": "^2.1.2",
